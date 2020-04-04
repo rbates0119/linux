@@ -150,6 +150,7 @@ struct bio {
 						 */
 	unsigned short		bi_flags;	/* status, etc and bvec pool number */
 	unsigned short		bi_ioprio;
+	unsigned short		bi_streamid;
 	unsigned short		bi_write_hint;
 	blk_status_t		bi_status;
 	u8			bi_partno;
@@ -245,6 +246,16 @@ enum {
 #if (1<< BVEC_POOL_BITS) < (BVEC_POOL_NR+1)
 # error "BVEC_POOL_BITS is too small"
 #endif
+
+static inline void bio_set_streamid(struct bio *bio, unsigned int id)
+{
+	bio->bi_streamid = id;
+}
+
+static inline unsigned int bio_get_streamid(struct bio *bio)
+{
+	return bio->bi_streamid;
+}
 
 /*
  * Flags starting here get preserved by bio_reset() - this includes

@@ -309,6 +309,7 @@ alloc_new:
 					gfp);
 		if (args->bio == NULL)
 			goto confused;
+		bio_set_streamid(args->bio, inode_streamid(inode));
 	}
 
 	length = first_hole << blkbits;

@@ -425,6 +425,7 @@ submit_and_retry:
 	if (io->io_bio == NULL) {
 		io_submit_init_bio(io, bh);
 		io->io_bio->bi_write_hint = inode->i_write_hint;
+		bio_set_streamid(io->io_bio, inode_streamid(inode));
 	}
 	ret = bio_add_page(io->io_bio, page, bh->b_size, bh_offset(bh));
 	if (ret != bh->b_size)

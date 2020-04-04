@@ -825,6 +825,7 @@ static int do_dentry_open(struct file *f,
 	 */
 	if ((f->f_mode & FMODE_WRITE) && filemap_nr_thps(inode->i_mapping))
 		truncate_pagecache(inode, 0);
+	f->f_streamid = 0;
 
 	return 0;
 

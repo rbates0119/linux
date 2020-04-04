@@ -119,6 +119,7 @@
 #define WRITE_SAME_16	      0x93
 #define ZBC_OUT		      0x94
 #define ZBC_IN		      0x95
+#define WRITE_STREAM_16       0x9a
 #define SERVICE_ACTION_BIDIRECTIONAL 0x9d
 #define SERVICE_ACTION_IN_16  0x9e
 #define SERVICE_ACTION_OUT_16 0x9f
@@ -126,6 +127,9 @@
 #define	SAI_READ_CAPACITY_16  0x10
 #define SAI_GET_LBA_STATUS    0x12
 #define SAI_REPORT_REFERRALS  0x13
+#define SAI_STREAM_CONTROL    0x14
+#define SAI_BACKGROUND_CONTROL    0x15
+#define SAI_GET_STREAM_STATUS     0x16
 /* values for maintenance in */
 #define MI_REPORT_IDENTIFYING_INFORMATION 0x05
 #define MI_REPORT_TARGET_PGS  0x0a
@@ -161,6 +165,7 @@
 #define WRITE_32	      0x0b
 #define WRITE_VERIFY_32	      0x0c
 #define WRITE_SAME_32	      0x0d
+#define WRITE_STREAM_32       0x10
 #define ATA_32		      0x1ff0
 
 /* Values for T10/04-262r7 */

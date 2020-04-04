@@ -183,6 +183,8 @@ static void nvmet_bdev_execute_rw(struct nvmet_req *req)
 	bio->bi_iter.bi_sector = sector;
 	bio->bi_private = req;
 	bio->bi_end_io = nvmet_bio_done;
+	if (req->cmd->rw.control & NVME_RW_DTYPE_STREAMS)
+		bio->bi_streamid = req->cmd->rw.dsmgmt >> 16;
 	bio->bi_opf = op;
 
 	blk_start_plug(&plug);

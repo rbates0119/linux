@@ -685,8 +685,8 @@ void __bio_clone_fast(struct bio *bio, struct bio *bio_src)
 	bio->bi_iter = bio_src->bi_iter;
 	bio->bi_io_vec = bio_src->bi_io_vec;
 
-	bio_clone_blkg_association(bio, bio_src);
 	blkcg_bio_issue_init(bio);
+	bio_set_streamid(bio, bio_get_streamid(bio_src));
 }
 EXPORT_SYMBOL(__bio_clone_fast);
 

@@ -3068,6 +3068,8 @@ static int submit_extent_page(unsigned int opf,
 		wbc_account_cgroup_owner(wbc, page, page_size);
 	}
 
+	bio_set_streamid(bio, inode_streamid(page->mapping->host));
+
 	*bio_ret = bio;
 
 	return ret;

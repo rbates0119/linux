@@ -73,6 +73,8 @@
 #include "scsi_priv.h"
 #include "scsi_logging.h"
 
+#include <trace/events/block.h>
+
 MODULE_AUTHOR("Eric Youngdale");
 MODULE_DESCRIPTION("SCSI disk (sd) driver");
 MODULE_LICENSE("GPL");
@@ -1167,6 +1169,7 @@ static blk_status_t sd_setup_read_write_cmnd(struct scsi_cmnd *cmd)
 	unsigned int mask = logical_to_sectors(sdp, 1) - 1;
 	bool write = rq_data_dir(rq) == WRITE;
 	unsigned char protect, fua;
+	unsigned short str_id = 0;
 	blk_status_t ret;
 	unsigned int dif;
 	bool dix;
@@ -1249,6 +1252,12 @@ static blk_status_t sd_setup_read_write_cmnd(struct scsi_cmnd *cmd)
 				     (unsigned long long)blk_rq_pos(rq),
 				     blk_rq_sectors(rq)));
 	SCSI_LOG_HLQUEUE(2,
+			 scmd_printk(KERN_INFO, cmd,
+					 "%s block: %llu, count: %d/%u, stream_id: %u\n",
+					 (rq_data_dir(rq) == WRITE) ? "writing" : "reading",
+					 (unsigned long long)blk_rq_pos(rq), nr_blocks,
+					 blk_rq_sectors(rq), str_id));
+	SCSI_LOG_HLQUEUE(3,
 			 scmd_printk(KERN_INFO, cmd,
 				     "%s %d/%u 512 byte blocks.\n",
 				     write ? "writing" : "reading", nr_blocks,

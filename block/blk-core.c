@@ -1063,6 +1063,8 @@ blk_qc_t generic_make_request(struct bio *bio)
 	current->bio_list = bio_list_on_stack;
 	do {
 		struct request_queue *q = bio->bi_disk->queue;
+		if (bio_data_dir(bio) == WRITE)
+			blk_add_trace_msg(q, "StreamID=%u", bio_get_streamid(bio));
 		blk_mq_req_flags_t flags = bio->bi_opf & REQ_NOWAIT ?
 			BLK_MQ_REQ_NOWAIT : 0;
 
