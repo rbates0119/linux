@@ -326,6 +326,7 @@ struct kiocb {
 	void			*private;
 	int			ki_flags;
 	u16			ki_hint;
+	u16			ki_streamid;
 	u16			ki_ioprio; /* See linux/ioprio.h */
 	unsigned int		ki_cookie; /* for ->iopoll */
 
@@ -2076,6 +2077,15 @@ static inline enum rw_hint file_write_hint(struct file *file)
 	return file_inode(file)->i_write_hint;
 }
 
+static inline int file_write_stream(struct file *file)
+{
+
+	if (file->f_streamid > 0)
+		return file->f_streamid;
+
+	return file_inode(file)->i_streamid;
+}
+
 static inline int iocb_flags(struct file *file);
 
 static inline u16 ki_hint_validate(enum rw_hint hint)
@@ -2093,6 +2103,7 @@ static inline void init_sync_kiocb(struct kiocb *kiocb, struct file *filp)
 		.ki_filp = filp,
 		.ki_flags = iocb_flags(filp),
 		.ki_hint = ki_hint_validate(file_write_hint(filp)),
+		.ki_streamid = file_write_stream(filp),
 		.ki_ioprio = get_current_ioprio(),
 	};
 }

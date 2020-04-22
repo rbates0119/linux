@@ -1855,7 +1855,7 @@ recover:
 		if (buffer_async_write(bh)) {
 			clear_buffer_dirty(bh);
 			submit_bh_wbc(REQ_OP_WRITE, write_flags, bh,
-					inode->i_write_hint, wbc, inode_streamid(inode));
+					inode->i_write_hint, wbc, inode->i_streamid);
 			nr_underway++;
 		}
 		bh = next;
@@ -3041,13 +3041,13 @@ static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
 	bio->bi_iter.bi_sector = bh->b_blocknr * (bh->b_size >> 9);
 	bio_set_dev(bio, bh->b_bdev);
 	bio->bi_write_hint = write_hint;
+	bio->bi_streamid = sid;
 
 	bio_add_page(bio, bh->b_page, bh->b_size, bh_offset(bh));
 	BUG_ON(bio->bi_iter.bi_size != bh->b_size);
 
 	bio->bi_end_io = end_bio_bh_io_sync;
 	bio->bi_private = bh;
-	bio->bi_streamid = sid;
 
 	if (buffer_meta(bh))
 		op_flags |= REQ_META;

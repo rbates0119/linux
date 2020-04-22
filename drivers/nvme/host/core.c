@@ -500,6 +500,8 @@ static int nvme_toggle_streams(struct nvme_ctrl *ctrl, bool enable)
 
 	memset(&c, 0, sizeof(c));
 
+	printk(KERN_NOTICE "\n nvme_toggle_streams: enable = %d\n", enable);
+
 	c.directive.opcode = nvme_admin_directive_send;
 	c.directive.nsid = cpu_to_le32(NVME_NSID_ALL);
 	c.directive.doper = NVME_DIR_SND_ID_OP_ENABLE;
@@ -541,6 +543,8 @@ static int nvme_configure_directives(struct nvme_ctrl *ctrl)
 {
 	struct streams_directive_params s;
 	int ret;
+
+	printk(KERN_NOTICE "\n nvme_configure_directives: streams = %d\n", streams);
 
 	if (!(ctrl->oacs & NVME_CTRL_OACS_DIRECTIVES))
 		return 0;
@@ -679,10 +683,11 @@ static inline blk_status_t nvme_setup_write_zeroes(struct nvme_ns *ns,
 static inline blk_status_t nvme_setup_rw(struct nvme_ns *ns,
 		struct request *req, struct nvme_command *cmnd)
 {
+
 	struct nvme_ctrl *ctrl = ns->ctrl;
 	u16 control = 0;
 	u32 dsmgmt = 0;
-	u16 dspec = bio_get_streamid(req->bio);
+	u16 dspec = req->bio->bi_streamid;
 
 	if (req->cmd_flags & REQ_FUA)
 		control |= NVME_RW_FUA;
@@ -692,9 +697,10 @@ static inline blk_status_t nvme_setup_rw(struct nvme_ns *ns,
 	if (req->cmd_flags & REQ_RAHEAD)
 		dsmgmt |= NVME_RW_DSM_FREQ_PREFETCH;
 
-	if (rq_data_dir(req) && dspec) {
+	if ((req_op(req) == REQ_OP_WRITE) && (dspec > 0) && streams) {
 		control |= NVME_RW_DTYPE_STREAMS;
 		dsmgmt  |= dspec << 16;
+		printk(KERN_NOTICE "\n nvme_setup_rw: bi_streamid = %d\n",	req->bio->bi_streamid);
 	}
 
 	cmnd->rw.opcode = (rq_data_dir(req) ? nvme_cmd_write : nvme_cmd_read);
@@ -702,8 +708,9 @@ static inline blk_status_t nvme_setup_rw(struct nvme_ns *ns,
 	cmnd->rw.slba = cpu_to_le64(nvme_sect_to_lba(ns, blk_rq_pos(req)));
 	cmnd->rw.length = cpu_to_le16((blk_rq_bytes(req) >> ns->lba_shift) - 1);
 
-	if (req_op(req) == REQ_OP_WRITE && ctrl->nr_streams)
+	if (req_op(req) == REQ_OP_WRITE && ctrl->nr_streams && streams) {
 		nvme_assign_write_stream(ctrl, req, &control, &dsmgmt);
+	}
 
 	if (ns->ms) {
 		/*

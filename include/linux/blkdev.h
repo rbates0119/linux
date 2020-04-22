@@ -224,6 +224,7 @@ struct request {
 #endif
 
 	unsigned short write_hint;
+	unsigned short write_stream;
 	unsigned short ioprio;
 
 	unsigned int extra_len;	/* length of alignment and padding */
