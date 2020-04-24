@@ -708,6 +708,7 @@ xfs_alloc_ioend(
 	bio->bi_iter.bi_sector = sector;
 	bio->bi_opf = REQ_OP_WRITE | wbc_to_write_flags(wbc);
 	bio->bi_write_hint = inode->i_write_hint;
+	bio->bi_stream_id = inode->i_stream_id;
 	wbc_init_bio(wbc, bio);
 
 	ioend = container_of(bio, struct xfs_ioend, io_inline_bio);
@@ -740,6 +741,7 @@ xfs_chain_bio(
 	new->bi_iter.bi_sector = bio_end_sector(prev);
 	new->bi_opf = prev->bi_opf;
 	new->bi_write_hint = prev->bi_write_hint;
+	new->bi_stream_id = prev->bi_stream_id;
 
 	bio_chain(prev, new);
 	bio_get(prev);		/* for xfs_destroy_ioend */

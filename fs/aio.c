@@ -1453,6 +1453,7 @@ static int aio_prep_rw(struct kiocb *req, const struct iocb *iocb)
 	if (iocb->aio_flags & IOCB_FLAG_RESFD)
 		req->ki_flags |= IOCB_EVENTFD;
 	req->ki_hint = ki_hint_validate(file_write_hint(req->ki_filp));
+	req->ki_streamid = file_stream_id(req->ki_filp);
 	if (iocb->aio_flags & IOCB_FLAG_IOPRIO) {
 		/*
 		 * If the IOCB_FLAG_IOPRIO flag of aio_flags is set, then

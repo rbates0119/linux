@@ -56,6 +56,9 @@ static int generic_fadvise(struct file *file, loff_t offset, loff_t len,
 		case POSIX_FADV_WILLNEED:
 		case POSIX_FADV_NOREUSE:
 		case POSIX_FADV_DONTNEED:
+		case POSIX_FADV_STREAM_ASSIGN:
+		case POSIX_FADV_STREAM_RELEASE:
+		case POSIX_FADV_STREAM_GET:
 			/* no bad return value, but ignore advice */
 			break;
 		default:
@@ -172,6 +175,73 @@ static int generic_fadvise(struct file *file, loff_t offset, loff_t len,
 						end_index);
 			}
 		}
+		break;
+	case POSIX_FADV_STREAM_ASSIGN:
+		/*
+		 * id is assigned in either file or inode indicated by len.
+		 * stream id is within 16-bit limits. 1 is the lowest valid
+		 * stream id, 0 is "normal write".
+		 * stream management is via bdi, if underlying
+		 * block device supports it.
+		 * TODO: get id from bdi
+		 *       assigned id with value in offset for testing now
+		 */
+
+		if (offset != (unsigned short) offset) {
+			return -EINVAL;
+			break;
+		}
+		if (len & ~(STREAM_F_FILE | STREAM_F_INODE)) {
+			return -EINVAL;
+			break;
+		}
+		if (len & STREAM_F_FILE) {
+			file->f_streamid = offset;
+//			printk(KERN_ERR "generic_fadvise: file->f_streamid = %d\n", file->f_streamid);
+		}
+		if (len & STREAM_F_INODE) {
+			spin_lock(&inode->i_lock);
+			inode->i_stream_id = offset;
+//			printk(KERN_ERR "generic_fadvise: inode->i_stream_id = %d\n", inode->i_stream_id);
+			spin_unlock(&inode->i_lock);
+		}
+		break;
+	case POSIX_FADV_STREAM_RELEASE:
+		/*
+		 * stream management is via bdi, if underlying
+		 * block device supports it.
+		 * TODO: release id via bdi
+		 */
+		if (len & ~(STREAM_F_FILE | STREAM_F_INODE)) {
+			return -EINVAL;
+			break;
+		}
+		if (len & STREAM_F_FILE) {
+			file->f_streamid = 0;
+		}
+		else if (len & STREAM_F_INODE) {
+			spin_lock(&inode->i_lock);
+			inode->i_stream_id = 0;
+			spin_unlock(&inode->i_lock);
+		}
+		else
+			return -EINVAL;
+		break;
+	case POSIX_FADV_STREAM_GET:
+		if (len & ~(STREAM_F_FILE | STREAM_F_INODE)) {
+			return -EINVAL;
+			break;
+		}
+		if (len & STREAM_F_FILE) {
+			return file->f_streamid;
+		}
+		else if (len & STREAM_F_INODE) {
+			spin_lock(&inode->i_lock);
+			spin_unlock(&inode->i_lock);
+			return inode->i_stream_id;
+		}
+		else
+			return -EINVAL;
 		break;
 	default:
 		return -EINVAL;

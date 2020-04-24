@@ -692,6 +692,9 @@ static struct request *attempt_merge(struct request_queue *q,
 	if (req->write_hint != next->write_hint)
 		return NULL;
 
+	if (req->stream_id != next->stream_id)
+		return NULL;
+
 	if (req->ioprio != next->ioprio)
 		return NULL;
 
@@ -822,6 +825,9 @@ bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
 	 * non-hint IO.
 	 */
 	if (rq->write_hint != bio->bi_write_hint)
+		return false;
+
+	if (rq->stream_id != bio->bi_stream_id)
 		return false;
 
 	if (rq->ioprio != bio_prio(bio))

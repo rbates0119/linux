@@ -21,6 +21,7 @@
 #include <linux/t10-pi.h>
 #include <linux/pm_qos.h>
 #include <asm/unaligned.h>
+#include <trace/events/block.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace.h"
@@ -497,6 +498,8 @@ static int nvme_configure_directives(struct nvme_ctrl *ctrl)
 	struct streams_directive_params s;
 	int ret;
 
+	printk(KERN_NOTICE "\n nvme_configure_directives: streams = %d\n", streams);
+
 	if (!(ctrl->oacs & NVME_CTRL_OACS_DIRECTIVES))
 		return 0;
 	if (!streams)
@@ -524,8 +527,8 @@ static int nvme_configure_directives(struct nvme_ctrl *ctrl)
 }
 
 /*
- * Check if 'req' has a write hint associated with it. If it does, assign
- * a valid namespace stream to the write.
+ * Check if 'req' has a write hint or write stream id associated with it.
+ * If it does, assign a valid stream to the write.
  */
 static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 				     struct request *req, u16 *control,
@@ -533,19 +536,24 @@ static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 {
 	enum rw_hint streamid = req->write_hint;
 
-	if (streamid == WRITE_LIFE_NOT_SET || streamid == WRITE_LIFE_NONE)
-		streamid = 0;
-	else {
+	if (streamid == WRITE_LIFE_NOT_SET || streamid == WRITE_LIFE_NONE) {
+
+		streamid = (u16)req->stream_id;
+
+	} else {
 		streamid--;
 		if (WARN_ON_ONCE(streamid > ctrl->nr_streams))
 			return;
 
+		if (streamid < ARRAY_SIZE(req->q->write_hints))
+			req->q->write_hints[streamid] += blk_rq_bytes(req) >> 9;
+	}
+
+	if (streamid > 0)
+	{
 		*control |= NVME_RW_DTYPE_STREAMS;
 		*dsmgmt |= streamid << 16;
 	}
-
-	if (streamid < ARRAY_SIZE(req->q->write_hints))
-		req->q->write_hints[streamid] += blk_rq_bytes(req) >> 9;
 }
 
 static inline void nvme_setup_flush(struct nvme_ns *ns,
@@ -628,6 +636,7 @@ static inline blk_status_t nvme_setup_write_zeroes(struct nvme_ns *ns,
 static inline blk_status_t nvme_setup_rw(struct nvme_ns *ns,
 		struct request *req, struct nvme_command *cmnd)
 {
+
 	struct nvme_ctrl *ctrl = ns->ctrl;
 	u16 control = 0;
 	u32 dsmgmt = 0;
@@ -645,8 +654,9 @@ static inline blk_status_t nvme_setup_rw(struct nvme_ns *ns,
 	cmnd->rw.slba = cpu_to_le64(nvme_block_nr(ns, blk_rq_pos(req)));
 	cmnd->rw.length = cpu_to_le16((blk_rq_bytes(req) >> ns->lba_shift) - 1);
 
-	if (req_op(req) == REQ_OP_WRITE && ctrl->nr_streams)
+	if (req_op(req) == REQ_OP_WRITE && streams) {
 		nvme_assign_write_stream(ctrl, req, &control, &dsmgmt);
+	}
 
 	if (ns->ms) {
 		/*
@@ -678,6 +688,9 @@ static inline blk_status_t nvme_setup_rw(struct nvme_ns *ns,
 
 	cmnd->rw.control = cpu_to_le16(control);
 	cmnd->rw.dsmgmt = cpu_to_le32(dsmgmt);
+	if (rq_data_dir(req))
+		blk_add_trace_msg(ns->queue, "off:%lld; len:%d; dtype:%d; nsid:%d",
+			cmnd->rw.slba, cmnd->rw.length+1, control>>4, cmnd->rw.nsid);
 	return 0;
 }
 
@@ -1077,6 +1090,19 @@ free_data:
 	return status;
 }
 
+int nvme_enable_directive(struct nvme_ctrl *dev, unsigned nsid, unsigned dir)
+{
+	struct nvme_command c = { };
+	c.directive.opcode = nvme_admin_directive_send;
+	c.directive.nsid = cpu_to_le32(nsid);
+	c.directive.doper = NVME_DIR_SND_ID_OP_ENABLE;
+	c.directive.dtype = NVME_DIR_IDENTIFY;
+	c.directive.tdtype = dir;
+	c.directive.endir = NVME_DIR_ENDIR;
+
+	return nvme_submit_sync_cmd(dev->admin_q, &c, NULL, 0);
+}
+
 static int nvme_identify_ns_list(struct nvme_ctrl *dev, unsigned nsid, __le32 *ns_list)
 {
 	struct nvme_command c = { };
@@ -1241,6 +1267,9 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 	c.rw.reftag = cpu_to_le32(io.reftag);
 	c.rw.apptag = cpu_to_le16(io.apptag);
 	c.rw.appmask = cpu_to_le16(io.appmask);
+	if (io.opcode == nvme_cmd_write)
+		blk_add_trace_msg(ns->queue, "off:%lld; len:%d; dtype:%d; dspec:%d; nsid:%d",
+			c.rw.slba, c.rw.length+1, c.rw.control>>4, c.rw.dsmgmt>>16, c.rw.nsid);
 
 	return nvme_submit_user_cmd(ns->queue, &c,
 			(void __user *)(uintptr_t)io.addr, length,
@@ -2641,6 +2670,14 @@ int nvme_init_identify(struct nvme_ctrl *ctrl)
 	ctrl->crdt[2] = le16_to_cpu(id->crdt3);
 
 	ctrl->oacs = le16_to_cpu(id->oacs);
+	if (ctrl->oacs & NVME_CTRL_OACS_DIRECTIVES) {
+		ret = nvme_enable_directive(ctrl, 0xffffffff, NVME_DIR_STREAMS);
+		if (ret)
+			dev_err(ctrl->device, "Enabling streams directive failed (%d)\n", ret);
+		else
+			dev_info(ctrl->device, "Streams directive enabled.\n");
+		ret = 0;
+	}
 	ctrl->oncs = le16_to_cpu(id->oncs);
 	ctrl->mtfa = le16_to_cpu(id->mtfa);
 	ctrl->oaes = le32_to_cpu(id->oaes);

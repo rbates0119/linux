@@ -217,6 +217,7 @@ struct request {
 #endif
 
 	unsigned short write_hint;
+	unsigned short stream_id;
 	unsigned short ioprio;
 
 	unsigned int extra_len;	/* length of alignment and padding */

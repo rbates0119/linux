@@ -83,6 +83,7 @@ struct dio_submit {
 	int reap_counter;		/* rate limit reaping */
 	sector_t final_block_in_request;/* doesn't change */
 	int boundary;			/* prev block is at a boundary */
+	int streamid;                   /* Write stream ID */
 	get_block_t *get_block;		/* block mapping function */
 	dio_submit_t *submit_io;	/* IO submition function */
 
@@ -447,9 +448,11 @@ dio_bio_alloc(struct dio *dio, struct dio_submit *sdio,
 		bio->bi_end_io = dio_bio_end_io;
 
 	bio->bi_write_hint = dio->iocb->ki_hint;
+	bio->bi_stream_id = dio->iocb->ki_streamid;
 
 	sdio->bio = bio;
 	sdio->logical_offset_in_bio = sdio->cur_page_fs_offset;
+	bio_set_streamid(bio, sdio->streamid);
 }
 
 /*
@@ -1297,6 +1300,7 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	sdio.blkbits = blkbits;
 	sdio.blkfactor = i_blkbits - blkbits;
 	sdio.block_in_file = offset >> blkbits;
+	sdio.streamid = file_streamid(iocb->ki_filp);
 
 	sdio.get_block = get_block;
 	dio->end_io = end_io;

@@ -1018,6 +1018,7 @@ static int io_prep_rw(struct io_kiocb *req, const struct sqe_submit *s,
 	kiocb->ki_pos = READ_ONCE(sqe->off);
 	kiocb->ki_flags = iocb_flags(kiocb->ki_filp);
 	kiocb->ki_hint = ki_hint_validate(file_write_hint(kiocb->ki_filp));
+	kiocb->ki_streamid = file_stream_id(kiocb->ki_filp);
 
 	ioprio = READ_ONCE(sqe->ioprio);
 	if (ioprio) {
