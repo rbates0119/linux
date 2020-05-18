@@ -2067,6 +2067,8 @@ static int io_prep_rw(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 	ret = kiocb_set_rw_flags(kiocb, READ_ONCE(sqe->rw_flags));
 	if (unlikely(ret))
 		return ret;
+	kiocb->ki_hint = ki_hint_validate(file_write_hint(kiocb->ki_filp));
+	kiocb->ki_streamid = file_stream_id(kiocb->ki_filp);
 
 	ioprio = READ_ONCE(sqe->ioprio);
 	if (ioprio) {

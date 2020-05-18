@@ -222,6 +222,7 @@ struct request {
 #endif
 
 	unsigned short write_hint;
+	unsigned short stream_id;
 	unsigned short ioprio;
 
 	enum mq_rq_state state;
