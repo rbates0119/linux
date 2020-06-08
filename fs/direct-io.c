@@ -1304,7 +1304,7 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	sdio.blkbits = blkbits;
 	sdio.blkfactor = i_blkbits - blkbits;
 	sdio.block_in_file = offset >> blkbits;
-	bio_set_streamid(bio, sdio->streamid);
+	sdio.streamid = file_streamid(iocb->ki_filp);
 
 	sdio.get_block = get_block;
 	dio->end_io = end_io;
