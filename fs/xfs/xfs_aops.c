@@ -524,6 +524,7 @@ xfs_submit_ioend(
 	}
 
 	ioend->io_bio->bi_write_hint = ioend->io_inode->i_write_hint;
+	ioend->io_bio->bi_stream_id = ioend->io_inode->i_stream_id;
 	submit_bio(ioend->io_bio);
 	return 0;
 }
@@ -578,6 +579,7 @@ xfs_chain_bio(
 	bio_get(ioend->io_bio);		/* for xfs_destroy_ioend */
 	ioend->io_bio->bi_opf = REQ_OP_WRITE | wbc_to_write_flags(wbc);
 	ioend->io_bio->bi_write_hint = ioend->io_inode->i_write_hint;
+	bio->bi_stream_id = inode->i_stream_id;
 	submit_bio(ioend->io_bio);
 	ioend->io_bio = new;
 }

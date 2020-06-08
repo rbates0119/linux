@@ -82,6 +82,7 @@ struct dio_submit {
 	int reap_counter;		/* rate limit reaping */
 	sector_t final_block_in_request;/* doesn't change */
 	int boundary;			/* prev block is at a boundary */
+	int streamid;                   /* Write stream ID */
 	get_block_t *get_block;		/* block mapping function */
 	dio_submit_t *submit_io;	/* IO submition function */
 
@@ -436,7 +437,7 @@ dio_bio_alloc(struct dio *dio, struct dio_submit *sdio,
 	 * we request a valid number of vectors.
 	 */
 	bio = bio_alloc(GFP_KERNEL, nr_vecs);
-
+	bio->bi_stream_id = dio->iocb->ki_streamid;
 	bio_set_dev(bio, bdev);
 	bio->bi_iter.bi_sector = first_sector;
 	bio_set_op_attrs(bio, dio->op, dio->op_flags);
@@ -446,9 +447,11 @@ dio_bio_alloc(struct dio *dio, struct dio_submit *sdio,
 		bio->bi_end_io = dio_bio_end_io;
 
 	bio->bi_write_hint = dio->iocb->ki_hint;
+	bio->bi_stream_id = dio->iocb->ki_streamid;
 
 	sdio->bio = bio;
 	sdio->logical_offset_in_bio = sdio->cur_page_fs_offset;
+	bio_set_streamid(bio, sdio->streamid);
 }
 
 /*
@@ -1301,6 +1304,7 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	sdio.blkbits = blkbits;
 	sdio.blkfactor = i_blkbits - blkbits;
 	sdio.block_in_file = offset >> blkbits;
+	bio_set_streamid(bio, sdio->streamid);
 
 	sdio.get_block = get_block;
 	dio->end_io = end_io;

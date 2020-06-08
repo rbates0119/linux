@@ -1676,6 +1676,7 @@ static void blk_mq_bio_to_request(struct request *rq, struct bio *bio)
 	blk_init_request_from_bio(rq, bio);
 
 	blk_rq_set_rl(rq, blk_get_rl(rq->q, bio));
+	rq->stream_id = bio->bi_stream_id;
 
 	blk_account_io_start(rq, true);
 }

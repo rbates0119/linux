@@ -309,6 +309,7 @@ struct kiocb {
 	void			*private;
 	int			ki_flags;
 	u16			ki_hint;
+	u16			ki_streamid;
 	u16			ki_ioprio; /* See linux/ioprio.h */
 } __randomize_layout;
 
@@ -679,6 +680,7 @@ struct inode {
 #ifdef CONFIG_IMA
 	atomic_t		i_readcount; /* struct files open RO */
 #endif
+	unsigned int		i_stream_id;
 	const struct file_operations	*i_fop;	/* former ->i_op->default_file_ops */
 	struct file_lock_context	*i_flctx;
 	struct address_space	i_data;
@@ -713,6 +715,13 @@ static inline unsigned int i_blocksize(const struct inode *node)
 static inline int inode_unhashed(struct inode *inode)
 {
 	return hlist_unhashed(&inode->i_hash);
+}
+
+static inline unsigned int inode_streamid(struct inode *inode)
+{
+	if (inode)
+		return inode->i_stream_id;
+	return 0;
 }
 
 /*
@@ -946,6 +955,10 @@ struct file_handle {
 	unsigned char f_handle[0];
 };
 
+static inline unsigned int file_streamid(struct file *f)
+{
+	return f->f_streamid; /* 0 is also a valid stream */
+}
 static inline struct file *get_file(struct file *f)
 {
 	atomic_long_inc(&f->f_count);
@@ -2004,6 +2017,15 @@ static inline enum rw_hint file_write_hint(struct file *file)
 	return file_inode(file)->i_write_hint;
 }
 
+static inline int file_stream_id(struct file *file)
+{
+
+	if (file->f_streamid > 0)
+		return file->f_streamid;
+
+	return file_inode(file)->i_stream_id;
+}
+
 static inline int iocb_flags(struct file *file);
 
 static inline u16 ki_hint_validate(enum rw_hint hint)
@@ -2021,6 +2043,7 @@ static inline void init_sync_kiocb(struct kiocb *kiocb, struct file *filp)
 		.ki_filp = filp,
 		.ki_flags = iocb_flags(filp),
 		.ki_hint = ki_hint_validate(file_write_hint(filp)),
+		.ki_streamid = file_stream_id(filp),
 		.ki_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0),
 	};
 }

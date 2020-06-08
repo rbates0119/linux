@@ -49,8 +49,8 @@
 
 static int fsync_buffers_list(spinlock_t *lock, struct list_head *list);
 static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
-			 enum rw_hint hint, struct writeback_control *wbc);
-
+			 enum rw_hint hint, struct writeback_control *wbc,
+			 			 unsigned short sid);
 #define BH_ENTRY(list) list_entry((list), struct buffer_head, b_assoc_buffers)
 
 inline void touch_buffer(struct buffer_head *bh)
@@ -1763,8 +1763,8 @@ int __block_write_full_page(struct inode *inode, struct page *page,
 		struct buffer_head *next = bh->b_this_page;
 		if (buffer_async_write(bh)) {
 			submit_bh_wbc(REQ_OP_WRITE, write_flags, bh,
-					inode->i_write_hint, wbc);
-			nr_underway++;
+					inode->i_write_hint, wbc, inode_streamid(inode));
+		nr_underway++;
 		}
 		bh = next;
 	} while (bh != head);
@@ -1818,7 +1818,7 @@ recover:
 		if (buffer_async_write(bh)) {
 			clear_buffer_dirty(bh);
 			submit_bh_wbc(REQ_OP_WRITE, write_flags, bh,
-					inode->i_write_hint, wbc);
+					inode->i_write_hint, wbc, inode->i_stream_id);
 			nr_underway++;
 		}
 		bh = next;
@@ -3038,7 +3038,8 @@ void guard_bio_eod(int op, struct bio *bio)
 }
 
 static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
-			 enum rw_hint write_hint, struct writeback_control *wbc)
+		 enum rw_hint write_hint, struct writeback_control *wbc,
+		 unsigned short sid)
 {
 	struct bio *bio;
 
@@ -3068,6 +3069,7 @@ static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
 	bio->bi_iter.bi_sector = bh->b_blocknr * (bh->b_size >> 9);
 	bio_set_dev(bio, bh->b_bdev);
 	bio->bi_write_hint = write_hint;
+	bio->bi_stream_id = sid;
 
 	bio_add_page(bio, bh->b_page, bh->b_size, bh_offset(bh));
 	BUG_ON(bio->bi_iter.bi_size != bh->b_size);
@@ -3090,7 +3092,7 @@ static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
 
 int submit_bh(int op, int op_flags, struct buffer_head *bh)
 {
-	return submit_bh_wbc(op, op_flags, bh, 0, NULL);
+	return submit_bh_wbc(op, op_flags, bh, 0, NULL, 0);
 }
 EXPORT_SYMBOL(submit_bh);
 

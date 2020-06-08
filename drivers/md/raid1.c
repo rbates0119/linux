@@ -1103,6 +1103,7 @@ static void alloc_behind_master_bio(struct r1bio *r1_bio,
 	}
 
 	behind_bio->bi_write_hint = bio->bi_write_hint;
+	behind_bio->bi_stream_id = bio->bi_stream_id;
 
 	while (i < vcnt && size) {
 		struct page *page;

@@ -607,10 +607,12 @@ void __bio_clone_fast(struct bio *bio, struct bio *bio_src)
 	bio->bi_opf = bio_src->bi_opf;
 	bio->bi_ioprio = bio_src->bi_ioprio;
 	bio->bi_write_hint = bio_src->bi_write_hint;
+	bio->bi_stream_id = bio_src->bi_stream_id;
 	bio->bi_iter = bio_src->bi_iter;
 	bio->bi_io_vec = bio_src->bi_io_vec;
 
 	bio_clone_blkcg_association(bio, bio_src);
+	bio_set_streamid(bio, bio_get_streamid(bio_src));
 }
 EXPORT_SYMBOL(__bio_clone_fast);
 

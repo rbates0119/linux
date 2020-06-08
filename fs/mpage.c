@@ -309,6 +309,7 @@ alloc_new:
 					gfp);
 		if (args->bio == NULL)
 			goto confused;
+		bio_set_streamid(args->bio, inode_streamid(inode));
 	}
 
 	length = first_hole << blkbits;
@@ -640,6 +641,7 @@ alloc_new:
 
 		wbc_init_bio(wbc, bio);
 		bio->bi_write_hint = inode->i_write_hint;
+		bio->bi_stream_id = inode->i_stream_id;
 	}
 
 	/*

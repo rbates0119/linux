@@ -17,6 +17,12 @@
 #else
 #define POSIX_FADV_DONTNEED	4 /* Don't need these pages.  */
 #define POSIX_FADV_NOREUSE	5 /* Data will be accessed once.  */
+#define POSIX_FADV_STREAM_ASSIGN    0xa /* allocate a stream */
+#define POSIX_FADV_STREAM_RELEASE   0xb /* release a stream */
+#define POSIX_FADV_STREAM_GET     0xc /* get current stream */
+
+#define STREAM_F_INODE  1 /* associate stream ID with inode */
+#define STREAM_F_FILE   2 /* associate stream ID with file */
 #endif
 
 #endif	/* FADVISE_H_INCLUDED */
