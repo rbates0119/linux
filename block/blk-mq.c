@@ -1819,7 +1819,7 @@ static void blk_mq_bio_to_request(struct request *rq, struct bio *bio,
 
 	rq->__sector = bio->bi_iter.bi_sector;
 	rq->write_hint = bio->bi_write_hint;
-	rq->stream_id = bio->bi_stream_id;
+	rq->write_stream_id = bio->bi_stream_id;
 	blk_rq_bio_prep(rq, bio, nr_segs);
 
 	blk_account_io_start(rq, true);

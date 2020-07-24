@@ -59,7 +59,7 @@ static bool force_apst;
 module_param(force_apst, bool, 0644);
 MODULE_PARM_DESC(force_apst, "allow APST for newly enumerated devices even if quirked off");
 
-static bool streams;
+static bool streams = true;
 module_param(streams, bool, 0644);
 MODULE_PARM_DESC(streams, "turn on support for Streams write directives");
 
@@ -582,25 +582,30 @@ static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 				     struct request *req, u16 *control,
 				     u32 *dsmgmt)
 {
-	enum rw_hint streamid = req->write_hint;
+	enum rw_hint hint = req->write_hint;
+	u64 streamid = req->write_stream_id;
 
-	if (streamid == WRITE_LIFE_NOT_SET || streamid == WRITE_LIFE_NONE) {
+	if (hint > WRITE_LIFE_NONE) {
 
-		streamid = (u16)req->stream_id;
-
-	} else {
-		streamid--;
+		hint--;
 		if (WARN_ON_ONCE(streamid > ctrl->nr_streams))
 			return;
 
 		if (streamid < ARRAY_SIZE(req->q->write_hints))
-			req->q->write_hints[streamid] += blk_rq_bytes(req) >> 9;
-	}
+			req->q->write_hints[hint] += blk_rq_bytes(req) >> 9;
+	} else {
 
-	if (streamid > 0)
-	{
-		*control |= NVME_RW_DTYPE_STREAMS;
-		*dsmgmt |= streamid << 16;
+		if (streamid == 0)
+		{
+			streamid = req->q->write_stream_id;
+		}
+		if (streamid > 0)
+		{
+			*control |= NVME_RW_DTYPE_STREAMS;
+			*dsmgmt |= streamid << 16;
+			printk(KERN_NOTICE "nvme_assign_write_stream: streamid = %d, dsmgmt = 0x%X, control = 0x%X\n", streamid, *dsmgmt, *control);
+			req->q->write_stream_id = streamid;
+		}
 	}
 }
 

@@ -251,6 +251,39 @@ EXPORT_SYMBOL(generic_fadvise);
 
 int vfs_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 {
+	struct inode *inode;
+
+	inode = file_inode(file);
+	if (S_ISFIFO(inode->i_mode))
+		return -ESPIPE;
+
+	if (advice == POSIX_FADV_STREAM_ASSIGN) {
+		/*
+		 * id is assigned in either file or inode indicated by len.
+		 * stream id is within 16-bit limits. 1 is the lowest valid
+		 * stream id, 0 is "normal write".
+		 * stream management is via bdi, if underlying
+		 * block device supports it.
+		 * TODO: get id from bdi
+		 *       assigned id with value in offset for testing now
+		 */
+
+		if (offset != (unsigned short) offset) {
+			return -EINVAL;
+		}
+		if (len & ~(STREAM_F_FILE | STREAM_F_INODE)) {
+			return -EINVAL;
+		}
+		if (len & STREAM_F_FILE) {
+			file->f_streamid = offset;
+		}
+		if (len & STREAM_F_INODE) {
+			spin_lock(&inode->i_lock);
+			inode->i_stream_id = offset;
+			spin_unlock(&inode->i_lock);
+		}
+	}
+
 	if (file->f_op->fadvise)
 		return file->f_op->fadvise(file, offset, len, advice);
 
