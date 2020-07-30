@@ -1,0 +1,123 @@
+
+Read this document fully before starting with the steps!
+
+Steps to create f2fs volume using Bora bora ZNS drive.
+F2fs filesystem needs random writable area to maintain it's metadata.
+Since ZNS drives are sequentially write only, f2fs filesytem cannot be
+created on a single ZNS drive. We need a regular block device to host
+the metadata of filesystem. 
+There are at least two approaches to overcome this challenge. Based on your
+hardware situation you can take one of the below approaches.
+
+1. Borabora ZNS device supports creating multiple name spaces. Create a
+   CNS(conventional name space) device, which is a regular block device and
+   use this device to along with the ZNS device to create F2FS filesystem.
+   Some part of CNS drive will be used for metadata management.
+   Note: Any regular block device can be substitued here for the CNS device.
+
+2. Use a Null-block device along with ZNS device to create the file system.
+   Null-block device acts as the regular block device. This file system will
+   not be available across reboots as null-block devices are configured to be
+   memory backed and will lose all filesystem meta-data across reboots.
+   This approach can be helpful if no regular block devices are there in
+   the test host.
+
+Warning: You will lose all previously stored data in the
+         regular block device and ZNS device, after going through below steps
+	 to create F2fs file system.
+
+Common steps to both approaches.
+1. Get the branch zns-6.12.2020-f2fs-zc of linux kernel from bitbucket.
+	git clone -b zns-6.12.2020-f2fs-zc https://bitbucket.wdc.com/scm/ctozns/linux.git
+2. Get the branch dev for f2fs-tools.
+	git clone -b dev https://bitbucket.wdc.com/scm/~aravind.ramesh_wdc.com/f2fs-tools.git
+3. Build the kernel with below steps.
+	make menuconfig
+	make -j8 deb-pkg
+	sudo dpkg -i ../*.deb
+   For more details on building kernel:
+   https://wdc.app.box.com/file/674154089109
+4. To compile f2fs-tools, follow the README in the f2fs-tools repository.
+
+
+Approach 1: BBZ CNS + ZNS steps to create F2fs file system volume.
+1. Assuming /dev/nvme0n1 and /dev/nvme0n2 are CNS and ZNS devices respectively.
+
+   Set the io-scheduler as mq-deadline for ZNS device, as shown below.
+   As root user, run: echo mq-deadline > /sys/block/nvme0n2/queue/scheduler
+   Verify by checking: cat /sys/block/nvme0n2/queue/scheduler
+   cd /path/to/linux/kernel
+   sudo insmod fs/f2fs/f2fs.ko
+   cd /path/to/f2fs-tools/
+   sudo mkfs/mkfs.f2fs -f -o 5 -m -c /dev/nvme0n2 /dev/nvme0n1 (add -d 2 for a verbose output)
+   sudo mkdir /path/to/mount
+   sudo mount -t f2fs -o active_logs=2 /dev/nvme0n1 /path/to/mount
+
+Approach 2: Null-block device + ZNS device.
+1. Assuming /dev/nvme0n1 is the ZNS device and /dev/nullb1 is the null-block device.
+2. Steps to create a regular block device using a null block device.
+   cd /path/to/linux/kernel
+   sudo insmod drivers/block/null_blk.ko
+   sudo su
+3. Copy paste the below 9 lines and run it.
+	cd /sys/kernel/config/nullb &&
+	mkdir -p nullb1 &&
+	cd nullb1 ; echo 0 > power;
+	echo 0 > zoned &&
+	echo 0 > completion_nsec &&
+	echo 4096 > blocksize &&
+	echo 4096 > size &&
+	echo 1 > memory_backed &&
+	echo 1 > power;
+4. Steps to create F2fs volume.
+   Set the io-scheduler as mq-deadline for ZNS device, as shown below.
+   As root user, run: echo mq-deadline > /sys/block/nvme0n1/queue/scheduler
+   Verify by checking: cat /sys/block/nvme0n2/queue/scheduler
+   cd /path/to/linux/kernel
+   sudo insmod fs/f2fs/f2fs.ko
+   cd /path/to/f2fs-tools/
+   sudo mkfs/mkfs.f2fs -f -o 5 -m -c /dev/nvme0n1 /dev/nullb1 (add -d 2 for a verbose output)
+   sudo mkdir /path/to/mount
+   sudo mount -t f2fs -o active_logs=2 /dev/nullb1 /path/to/mount
+
+
+
+Steps to download, compile and run Fio:
+Clone fio from github "https://github.com/axboe/fio" using below commands.
+git clone https://github.com/axboe/fio
+cd fio
+./configure
+make
+
+Create a config file(f2fs.cfg) with below options:
+===================================================
+[seq-write_bs128K_qd256]
+name=zc-seq-write
+filename=/mounted/path/test-filename
+rw=randwrite
+#rw=write
+bs=256K
+numjobs=1
+#time_based=1
+#runtime=30
+size=50G
+io_size=50G
+ioengine=libaio
+iodepth=1
+===================================================
+
+Run sudo ./fio ./f2fs.cfg
+
+
+NOTES:
+======
+
+1. Since the zone capacity in BBZ drives are almost half the size of the zone, the volume
+   will show almost half the volume as full, in df -h output.
+2. Ensure io-scheduler is mq-deadline for the ZNS device. If not, it leads to write errors.
+3. For a device of size 1TB, 4GB CNS device size is not enough. So, format the ZNS device such that
+   it has 512GB size(256 zones). Otherwise, IO error can happen.
+4. Alternatively, use another block device(ex: another SSD on the host) with higher capacity than 4GB
+   and use that as the drive for metadata.
+5. All previously stored data will be lost once the drives are formatted.
+
