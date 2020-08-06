@@ -217,7 +217,7 @@ struct request {
 #endif
 
 	unsigned short write_hint;
-	unsigned short stream_id;
+	unsigned write_stream_id;
 	unsigned short ioprio;
 
 	unsigned int extra_len;	/* length of alignment and padding */
@@ -585,6 +585,7 @@ struct request_queue {
 
 #define BLK_MAX_WRITE_HINTS	5
 	u64			write_hints[BLK_MAX_WRITE_HINTS];
+	u64			write_stream_id;
 };
 
 #define QUEUE_FLAG_STOPPED	0	/* queue is stopped */

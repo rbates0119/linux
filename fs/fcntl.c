@@ -319,6 +319,42 @@ static long fcntl_rw_hint(struct file *file, unsigned int cmd,
 	}
 }
 
+static long fcntl_write_stream(struct file *file, unsigned int cmd,
+			  unsigned long arg)
+{
+	struct inode *inode = file_inode(file);
+	u64 *argp = (u64 __user *)arg;
+	unsigned int stream_id;
+	u64 h;
+
+	switch (cmd) {
+	case F_SET_STREAM_ID:
+
+		if (copy_from_user(&h, argp, sizeof(h)))
+			return -EFAULT;
+		stream_id = (unsigned int) h;
+//		printk(KERN_NOTICE "fcntl_write_stream: inode - stream_id = %d\n", stream_id);
+
+		inode_lock(inode);
+		inode->i_stream_id = stream_id;
+		inode_unlock(inode);
+		break;
+	case F_SET_FILE_STREAM_ID:
+		if (copy_from_user(&h, argp, sizeof(h)))
+			return -EFAULT;
+		stream_id = (unsigned int) h;
+//		printk(KERN_NOTICE "fcntl_write_stream: file - stream_id = %d\n", stream_id);
+
+		spin_lock(&file->f_lock);
+		file->f_streamid = stream_id;
+		spin_unlock(&file->f_lock);
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 		struct file *filp)
 {
@@ -425,6 +461,10 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	case F_GET_FILE_RW_HINT:
 	case F_SET_FILE_RW_HINT:
 		err = fcntl_rw_hint(filp, cmd, arg);
+		break;
+	case F_SET_STREAM_ID:
+	case F_SET_FILE_STREAM_ID:
+		err = fcntl_write_stream(filp, cmd, arg);
 		break;
 	default:
 		break;
