@@ -318,7 +318,7 @@ static void blkdev_bio_end_io(struct bio *bio)
 #ifdef CONFIG_BLK_DEV_ZONED
 				if (iocb->ki_flags & IOCB_ZONE_APPEND) {
 					res = blkdev_bio_end_io_append(bio);
-					pr_debug("%s: bi_sector: %llx, res: %llx \n",
+					pr_debug("%s: bi_sector: %llx, res: %lx \n",
 							__func__, bio->bi_iter.bi_sector, res);
 				}
 #endif
