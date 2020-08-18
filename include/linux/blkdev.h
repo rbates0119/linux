@@ -225,6 +225,7 @@ struct request {
 #endif
 
 	unsigned short write_hint;
+	unsigned write_stream_id;
 	unsigned short ioprio;
 
 	enum mq_rq_state state;
@@ -582,6 +583,7 @@ struct request_queue {
 
 #define BLK_MAX_WRITE_HINTS	5
 	u64			write_hints[BLK_MAX_WRITE_HINTS];
+	u64			write_stream_id;
 };
 
 /* Keep blk_queue_flag_name[] in sync with the definitions below */

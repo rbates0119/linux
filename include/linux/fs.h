@@ -328,6 +328,7 @@ struct kiocb {
 	void			*private;
 	int			ki_flags;
 	u16			ki_hint;
+	u16			ki_streamid;
 	u16			ki_ioprio; /* See linux/ioprio.h */
 	unsigned int		ki_cookie; /* for ->iopoll */
 
@@ -674,6 +675,7 @@ struct inode {
 #if defined(CONFIG_IMA) || defined(CONFIG_FILE_LOCKING)
 	atomic_t		i_readcount; /* struct files open RO */
 #endif
+	unsigned int		i_stream_id;
 	union {
 		const struct file_operations	*i_fop;	/* former ->i_op->default_file_ops */
 		void (*free_inode)(struct inode *);
@@ -712,6 +714,13 @@ struct timespec64 timestamp_truncate(struct timespec64 t, struct inode *inode);
 static inline unsigned int i_blocksize(const struct inode *node)
 {
 	return (1 << node->i_blkbits);
+}
+
+static inline unsigned int inode_streamid(struct inode *inode)
+{
+	if (inode)
+		return inode->i_stream_id;
+	return 0;
 }
 
 static inline int inode_unhashed(struct inode *inode)
@@ -915,6 +924,7 @@ struct file {
 	 */
 	spinlock_t		f_lock;
 	enum rw_hint		f_write_hint;
+	unsigned int		f_streamid;
 	atomic_long_t		f_count;
 	unsigned int 		f_flags;
 	fmode_t			f_mode;
@@ -948,6 +958,11 @@ struct file_handle {
 	/* file identifier */
 	unsigned char f_handle[];
 };
+
+static inline unsigned int file_streamid(struct file *f)
+{
+	return f->f_streamid; /* 0 is also a valid stream */
+}
 
 static inline struct file *get_file(struct file *f)
 {
@@ -2011,6 +2026,15 @@ static inline enum rw_hint file_write_hint(struct file *file)
 		return file->f_write_hint;
 
 	return file_inode(file)->i_write_hint;
+}
+
+static inline int file_stream_id(struct file *file)
+{
+
+	if (file->f_streamid > 0)
+		return file->f_streamid;
+
+	return file_inode(file)->i_stream_id;
 }
 
 static inline int iocb_flags(struct file *file);

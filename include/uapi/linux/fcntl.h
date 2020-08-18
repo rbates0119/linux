@@ -50,10 +50,12 @@
  * underlying inode, while {GET,SET}_FILE_RW_HINT operate only on
  * the specific file.
  */
-#define F_GET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 11)
-#define F_SET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 12)
-#define F_GET_FILE_RW_HINT	(F_LINUX_SPECIFIC_BASE + 13)
-#define F_SET_FILE_RW_HINT	(F_LINUX_SPECIFIC_BASE + 14)
+#define F_GET_RW_HINT			(F_LINUX_SPECIFIC_BASE + 11)
+#define F_SET_RW_HINT			(F_LINUX_SPECIFIC_BASE + 12)
+#define F_GET_FILE_RW_HINT		(F_LINUX_SPECIFIC_BASE + 13)
+#define F_SET_FILE_RW_HINT		(F_LINUX_SPECIFIC_BASE + 14)
+#define F_SET_STREAM_ID			(F_LINUX_SPECIFIC_BASE + 15)
+#define F_SET_FILE_STREAM_ID	(F_LINUX_SPECIFIC_BASE + 16)
 
 /*
  * Valid hint values for F_{GET,SET}_RW_HINT. 0 is "not set", or can be
