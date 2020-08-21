@@ -609,7 +609,7 @@ static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 		if (hint != WRITE_LIFE_NONE)
 			req->q->write_stream_id = streamid;
 	}
-	printk(KERN_NOTICE "\n nvme_assign_write_stream: stread_id = %lld, write_stream_id = %lld, hine = %d\n", streamid, req->q->write_stream_id, hint);
+//	printk(KERN_NOTICE "\n nvme_assign_write_stream: stread_id = %lld, write_stream_id = %lld, hine = %d\n", streamid, req->q->write_stream_id, hint);
 }
 
 static inline void nvme_setup_flush(struct nvme_ns *ns,
