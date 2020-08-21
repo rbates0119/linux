@@ -586,27 +586,30 @@ static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 	u64 streamid = req->write_stream_id;
 
 	if (hint > WRITE_LIFE_NONE) {
-
+		streamid = 0;
+		req->write_stream_id = 0;
 		hint--;
-		if (WARN_ON_ONCE(streamid > ctrl->nr_streams))
+		if (WARN_ON_ONCE(hint > ctrl->nr_streams))
 			return;
 
 		if (streamid < ARRAY_SIZE(req->q->write_hints))
 			req->q->write_hints[hint] += blk_rq_bytes(req) >> 9;
-	} else {
-
-		if (streamid == 0)
-		{
-			streamid = req->q->write_stream_id;
-		}
-		if (streamid > 0)
-		{
-			*control |= NVME_RW_DTYPE_STREAMS;
-			*dsmgmt |= streamid << 16;
-			printk(KERN_NOTICE "nvme_assign_write_stream: streamid = %d, dsmgmt = 0x%X, control = 0x%X\n", streamid, *dsmgmt, *control);
-			req->q->write_stream_id = streamid;
-		}
+	} else if (hint == WRITE_LIFE_NONE) {
+		streamid = 0;
+		req->q->write_stream_id = 0;
 	}
+	if (streamid == 0)
+	{
+		streamid = req->q->write_stream_id;
+	}
+	if (streamid > 0)
+	{
+		*control |= NVME_RW_DTYPE_STREAMS;
+		*dsmgmt |= streamid << 16;
+		if (hint != WRITE_LIFE_NONE)
+			req->q->write_stream_id = streamid;
+	}
+	printk(KERN_NOTICE "\n nvme_assign_write_stream: stread_id = %lld, write_stream_id = %lld, hine = %d\n", streamid, req->q->write_stream_id, hint);
 }
 
 static inline void nvme_setup_flush(struct nvme_ns *ns,
