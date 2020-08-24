@@ -595,25 +595,19 @@ static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 	u64 streamid = req->write_stream_id;
 
 	if (hint > WRITE_LIFE_NONE) {
-
 		hint--;
-		if (WARN_ON_ONCE(streamid > ctrl->nr_streams))
+		if (WARN_ON_ONCE(hint > ctrl->nr_streams))
 			return;
 
-		if (streamid < ARRAY_SIZE(req->q->write_hints))
+		if (hint < ARRAY_SIZE(req->q->write_hints))
 			req->q->write_hints[hint] += blk_rq_bytes(req) >> 9;
-	} else {
-
-		if (streamid == 0)
-		{
-			streamid = req->q->write_stream_id;
-		}
-		if (streamid > 0)
-		{
-			*control |= NVME_RW_DTYPE_STREAMS;
-			*dsmgmt |= streamid << 16;
-			req->q->write_stream_id = streamid;
-		}
+	}
+	printk(KERN_NOTICE "\n nvme_assign_write_stream: stream_id = %lld, hint = %d\n", streamid, hint);
+	if (streamid > 0)
+	{
+		*control |= NVME_RW_DTYPE_STREAMS;
+		*dsmgmt |= streamid << 16;
+		req->write_stream_id = 0;
 	}
 }
 
