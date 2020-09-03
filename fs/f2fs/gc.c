@@ -1180,7 +1180,8 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 	struct f2fs_summary_block *sum;
 	struct blk_plug plug;
 	unsigned int segno = start_segno;
-	unsigned int end_segno = start_segno + sbi->segs_per_sec;
+	unsigned int end_segno = start_segno -
+			(start_segno % sbi->segs_per_sec) + sbi->segs_per_sec;
 	int seg_freed = 0, migrated = 0;
 	unsigned char type = IS_DATASEG(get_seg_entry(sbi, segno)->type) ?
 						SUM_TYPE_DATA : SUM_TYPE_NODE;
@@ -1191,12 +1192,13 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 	 * resulting in less than expected usable segments in the zone,
 	 * calculate the end segno in the zone which can be garbage collected
 	 */
-	if (f2fs_sb_has_blkzoned(sbi))
-		end_segno -= sbi->segs_per_sec -
+	if (__is_large_section(sbi)) {
+		if (f2fs_sb_has_blkzoned(sbi))
+			end_segno -= sbi->segs_per_sec -
 				f2fs_usable_segs_in_sec(sbi, segno);
-	else if (__is_large_section(sbi))
-		end_segno = rounddown(end_segno, sbi->segs_per_sec);
-
+		else
+			end_segno = roundup(end_segno, sbi->segs_per_sec);
+	}
 
 	/* readahead multi ssa blocks those have contiguous address */
 	if (__is_large_section(sbi))
