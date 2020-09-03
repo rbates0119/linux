@@ -1185,7 +1185,7 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 	int seg_freed = 0, migrated = 0;
 	unsigned char type = IS_DATASEG(get_seg_entry(sbi, segno)->type) ?
 						SUM_TYPE_DATA : SUM_TYPE_NODE;
-	int submitted = 0;
+	int data_submitted = 0, node_submitted = 0;
 
 	/*
 	 * zone-capacity can be less than zone-size in zoned devices,
@@ -1241,6 +1241,8 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 			goto skip;
 
 		sum = page_address(sum_page);
+		type = IS_DATASEG(get_seg_entry(sbi, segno)->type) ?
+						SUM_TYPE_DATA : SUM_TYPE_NODE;
 		if (type != GET_SUM_TYPE((&sum->footer))) {
 			f2fs_err(sbi, "Inconsistent segment (%u) type [%d, %d] in SSA and SIT",
 				 segno, type, GET_SUM_TYPE((&sum->footer)));
@@ -1257,10 +1259,10 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 		 *                                  - lock_page(sum_page)
 		 */
 		if (type == SUM_TYPE_NODE)
-			submitted += gc_node_segment(sbi, sum->entries, segno,
+			node_submitted += gc_node_segment(sbi, sum->entries, segno,
 								gc_type);
 		else
-			submitted += gc_data_segment(sbi, sum->entries, gc_list,
+			data_submitted += gc_data_segment(sbi, sum->entries, gc_list,
 							segno, gc_type);
 
 		stat_inc_seg_count(sbi, type, gc_type);
@@ -1277,9 +1279,10 @@ skip:
 		f2fs_put_page(sum_page, 0);
 	}
 
-	if (submitted)
-		f2fs_submit_merged_write(sbi,
-				(type == SUM_TYPE_NODE) ? NODE : DATA);
+	if (node_submitted)
+		f2fs_submit_merged_write(sbi, NODE);
+	if (data_submitted)
+		f2fs_submit_merged_write(sbi, DATA);
 
 	blk_finish_plug(&plug);
 
