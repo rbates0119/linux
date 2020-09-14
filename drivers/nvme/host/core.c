@@ -602,9 +602,9 @@ static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 		if (hint < ARRAY_SIZE(req->q->write_hints))
 			req->q->write_hints[hint] += blk_rq_bytes(req) >> 9;
 	}
-	printk(KERN_NOTICE "\n nvme_assign_write_stream: stream_id = %lld, hint = %d\n", streamid, hint);
 	if (streamid > 0)
 	{
+		printk(KERN_DEBUG "\n nvme_assign_write_stream: stream_id = %lld, hint = %d\n", streamid, hint);
 		*control |= NVME_RW_DTYPE_STREAMS;
 		*dsmgmt |= streamid << 16;
 		req->write_stream_id = 0;

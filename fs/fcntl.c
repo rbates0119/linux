@@ -333,8 +333,7 @@ static long fcntl_write_stream(struct file *file, unsigned int cmd,
 		if (copy_from_user(&h, argp, sizeof(h)))
 			return -EFAULT;
 		stream_id = (unsigned int) h;
-//		printk(KERN_NOTICE "fcntl_write_stream: inode - stream_id = %d\n", stream_id);
-
+		printk(KERN_DEBUG "fcntl_write_stream: inode - stream_id = %d\n", stream_id);
 		inode_lock(inode);
 		inode->i_stream_id = stream_id;
 		inode_unlock(inode);
@@ -343,8 +342,7 @@ static long fcntl_write_stream(struct file *file, unsigned int cmd,
 		if (copy_from_user(&h, argp, sizeof(h)))
 			return -EFAULT;
 		stream_id = (unsigned int) h;
-//		printk(KERN_NOTICE "fcntl_write_stream: file - stream_id = %d\n", stream_id);
-
+		printk(KERN_DEBUG "fcntl_write_stream: file - stream_id = %d\n", stream_id);
 		spin_lock(&file->f_lock);
 		file->f_streamid = stream_id;
 		spin_unlock(&file->f_lock);

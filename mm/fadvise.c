@@ -194,12 +194,12 @@ int generic_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 		}
 		if (len & STREAM_F_FILE) {
 			file->f_streamid = offset;
-//			printk(KERN_ERR "generic_fadvise: file->f_streamid = %d\n", file->f_streamid);
+			printk(KERN_DEBUG "generic_fadvise: file->f_streamid = %d\n", file->f_streamid);
 		}
 		if (len & STREAM_F_INODE) {
 			spin_lock(&inode->i_lock);
 			inode->i_stream_id = offset;
-//			printk(KERN_ERR "generic_fadvise: inode->i_stream_id = %d\n", inode->i_stream_id);
+			printk(KERN_DEBUG "generic_fadvise: inode->i_stream_id = %d\n", inode->i_stream_id);
 			spin_unlock(&inode->i_lock);
 		}
 		break;
