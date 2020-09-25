@@ -653,6 +653,10 @@ struct io_kiocb {
 	u64			user_data;
 	u32			result;
 	u32			sequence;
+#ifdef CONFIG_BLK_DEV_ZONED
+	/* wp offset for append, in bytes */
+	u64			wp_offset;
+#endif
 
 	struct list_head	link_list;
 
@@ -1305,7 +1309,13 @@ static void __io_cqring_fill_event(struct io_kiocb *req, long res, long cflags)
 	if (likely(cqe)) {
 		WRITE_ONCE(cqe->user_data, req->user_data);
 		WRITE_ONCE(cqe->res, res);
+#ifdef CONFIG_BLK_DEV_ZONED
+		WRITE_ONCE(cqe->res2, req->wp_offset);
+		pr_debug("%s:%d: ret: %x, res2: %llx[%llx] \n", __func__, __LINE__,
+				cqe->res, cqe->res2, req->wp_offset);
+#else
 		WRITE_ONCE(cqe->flags, cflags);
+#endif
 	} else if (ctx->cq_overflow_flushed) {
 		WRITE_ONCE(ctx->rings->cq_overflow,
 				atomic_inc_return(&ctx->cached_cq_overflow));
@@ -2735,6 +2745,9 @@ static int io_write(struct io_kiocb *req, bool force_nonblock)
 		req->rw.kiocb.ki_flags &= ~IOCB_NOWAIT;
 
 	req->result = 0;
+#ifdef CONFIG_BLK_DEV_ZONED
+	req->wp_offset = 0;
+#endif
 	io_size = ret;
 	if (req->flags & REQ_F_LINK_HEAD)
 		req->result = io_size;

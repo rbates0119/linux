@@ -169,8 +169,12 @@ static struct inode *bdev_file_inode(struct file *file)
 
 static unsigned int dio_bio_write_op(struct kiocb *iocb)
 {
-	unsigned int op = REQ_OP_WRITE | REQ_SYNC | REQ_IDLE;
+	unsigned int op = REQ_SYNC | REQ_IDLE;
 
+	if (iocb->ki_flags & IOCB_ZONE_APPEND)
+		op |= (REQ_OP_ZONE_APPEND | REQ_NOMERGE);
+	else
+		op |= REQ_OP_WRITE;
 	/* avoid the need for a I/O completion work item */
 	if (iocb->ki_flags & IOCB_DSYNC)
 		op |= REQ_FUA;
@@ -285,6 +289,15 @@ static int blkdev_iopoll(struct kiocb *kiocb, bool wait)
 	return blk_poll(q, READ_ONCE(kiocb->ki_cookie), wait);
 }
 
+#ifdef CONFIG_BLK_DEV_ZONED
+static inline long blkdev_bio_end_io_append(struct bio *bio)
+{
+	return (bio->bi_iter.bi_sector);
+//	return (bio->bi_iter.bi_sector %
+//			blk_queue_zone_sectors(bio->bi_disk->queue)) << SECTOR_SHIFT;
+}
+#endif
+
 static void blkdev_bio_end_io(struct bio *bio)
 {
 	struct blkdev_dio *dio = bio->bi_private;
@@ -297,15 +310,23 @@ static void blkdev_bio_end_io(struct bio *bio)
 		if (!dio->is_sync) {
 			struct kiocb *iocb = dio->iocb;
 			ssize_t ret;
+			long res = 0;
 
 			if (likely(!dio->bio.bi_status)) {
 				ret = dio->size;
 				iocb->ki_pos += ret;
+#ifdef CONFIG_BLK_DEV_ZONED
+				if (iocb->ki_flags & IOCB_ZONE_APPEND) {
+					res = blkdev_bio_end_io_append(bio);
+					pr_debug("%s: bi_sector: %llx, res: %llx \n",
+							__func__, bio->bi_iter.bi_sector, res);
+				}
+#endif
 			} else {
 				ret = blk_status_to_errno(dio->bio.bi_status);
 			}
 
-			dio->iocb->ki_complete(iocb, ret, 0);
+			dio->iocb->ki_complete(iocb, ret, res);
 			if (dio->multi_bio)
 				bio_put(&dio->bio);
 		} else {

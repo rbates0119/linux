@@ -1580,6 +1580,10 @@ static int aio_write(struct kiocb *req, const struct iocb *iocb,
 			__sb_start_write(file_inode(file)->i_sb, SB_FREEZE_WRITE, true);
 			__sb_writers_release(file_inode(file)->i_sb, SB_FREEZE_WRITE);
 		}
+#ifdef CONFIG_BLK_DEV_ZONED
+		if (iocb->aio_lio_opcode == IOCB_CMD_ZONE_APPEND)
+			req->ki_flags |= IOCB_ZONE_APPEND;
+#endif
 		req->ki_flags |= IOCB_WRITE;
 		aio_rw_done(req, call_write_iter(file, req, &iter));
 	}
@@ -1847,6 +1851,10 @@ static int __io_submit_one(struct kioctx *ctx, const struct iocb *iocb,
 		return aio_fsync(&req->fsync, iocb, true);
 	case IOCB_CMD_POLL:
 		return aio_poll(req, iocb);
+#ifdef CONFIG_BLK_DEV_ZONED
+	case IOCB_CMD_ZONE_APPEND:
+		return aio_write(&req->rw, iocb, false, compat);
+#endif
 	default:
 		pr_debug("invalid aio operation %d\n", iocb->aio_lio_opcode);
 		return -EINVAL;

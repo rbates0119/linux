@@ -292,6 +292,8 @@ void nvme_complete_rq(struct request *req)
 		   req_op(req) == REQ_OP_ZONE_APPEND) {
 		req->__sector = nvme_lba_to_sect(req->q->queuedata,
 			le64_to_cpu(nvme_req(req)->result.u64));
+		pr_debug("%s: __sector: %llx \n",
+				__func__, req->__sector);
 	}
 
 	nvme_trace_bio_complete(req, status);
