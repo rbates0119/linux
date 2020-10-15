@@ -291,7 +291,7 @@ static inline void nvme_end_req(struct request *req)
 	blk_status_t status = nvme_error_status(nvme_req(req)->status);
 
 	if (IS_ENABLED(CONFIG_BLK_DEV_ZONED) &&
-	    req_op(req) == REQ_OP_ZONE_APPEND)
+	    req_op(req) == REQ_OP_ZONE_APPEND) {
 		req->__sector = nvme_lba_to_sect(req->q->queuedata,
 			le64_to_cpu(nvme_req(req)->result.u64));
 		printk(KERN_DEBUG "\n nvme_complete_rq: zone_apppend  __sector: %llx\n", req->__sector);

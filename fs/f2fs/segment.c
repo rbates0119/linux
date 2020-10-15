@@ -4331,10 +4331,9 @@ static void init_dirty_segmap(struct f2fs_sb_info *sbi)
 			break;
 		offset = segno + 1;
 		valid_blocks = get_valid_blocks(sbi, segno, false);
-		usable_blks_in_seg = f2fs_usable_blks_in_seg(sbi, segno);
-		if (valid_blocks == usable_blks_in_seg || !valid_blocks)
+		if (valid_blocks == sbi->blocks_per_seg || !valid_blocks)
 			continue;
-		if (valid_blocks > usable_blks_in_seg) {
+		if (valid_blocks > sbi->blocks_per_seg) {
 			f2fs_bug_on(sbi, 1);
 			continue;
 		}
