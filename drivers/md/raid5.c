@@ -2620,7 +2620,7 @@ static void raid5_end_write_request(struct bio *bi)
 	struct stripe_head *sh = bi->bi_private;
 	struct r5conf *conf = sh->raid_conf;
 	int disks = sh->disks, i;
-	struct md_rdev *uninitialized_var(rdev);
+	struct md_rdev *rdev;
 	sector_t first_bad;
 	int bad_sectors;
 	int replacement = 0;
@@ -3557,6 +3557,7 @@ static int need_this_block(struct stripe_head *sh, struct stripe_head_state *s,
 	struct r5dev *fdev[2] = { &sh->dev[s->failed_num[0]],
 				  &sh->dev[s->failed_num[1]] };
 	int i;
+	bool force_rcw = (sh->raid_conf->rmw_level == PARITY_DISABLE_RMW);
 
 
 	if (test_bit(R5_LOCKED, &dev->flags) ||
@@ -3615,17 +3616,27 @@ static int need_this_block(struct stripe_head *sh, struct stripe_head_state *s,
 			 * devices must be read.
 			 */
 			return 1;
+
+		if (s->failed >= 2 &&
+		    (fdev[i]->towrite ||
+		     s->failed_num[i] == sh->pd_idx ||
+		     s->failed_num[i] == sh->qd_idx) &&
+		    !test_bit(R5_UPTODATE, &fdev[i]->flags))
+			/* In max degraded raid6, If the failed disk is P, Q,
+			 * or we want to read the failed disk, we need to do
+			 * reconstruct-write.
+			 */
+			force_rcw = true;
 	}
 
-	/* If we are forced to do a reconstruct-write, either because
-	 * the current RAID6 implementation only supports that, or
-	 * because parity cannot be trusted and we are currently
-	 * recovering it, there is extra need to be careful.
+	/* If we are forced to do a reconstruct-write, because parity
+	 * cannot be trusted and we are currently recovering it, there
+	 * is extra need to be careful.
 	 * If one of the devices that we would need to read, because
 	 * it is not being overwritten (and maybe not written at all)
 	 * is missing/faulty, then we need to read everything we can.
 	 */
-	if (sh->raid_conf->level != 6 &&
+	if (!force_rcw &&
 	    sh->sector < sh->raid_conf->mddev->recovery_cp)
 		/* reconstruct-write isn't being forced */
 		return 0;
@@ -3995,10 +4006,8 @@ static int handle_stripe_dirtying(struct r5conf *conf,
 					set_bit(R5_LOCKED, &dev->flags);
 					set_bit(R5_Wantread, &dev->flags);
 					s->locked++;
-				} else {
+				} else
 					set_bit(STRIPE_DELAYED, &sh->state);
-					set_bit(STRIPE_HANDLE, &sh->state);
-				}
 			}
 		}
 	}
@@ -4023,10 +4032,8 @@ static int handle_stripe_dirtying(struct r5conf *conf,
 					set_bit(R5_Wantread, &dev->flags);
 					s->locked++;
 					qread++;
-				} else {
+				} else
 					set_bit(STRIPE_DELAYED, &sh->state);
-					set_bit(STRIPE_HANDLE, &sh->state);
-				}
 			}
 		}
 		if (rcw && conf->mddev->queue)
@@ -4076,7 +4083,7 @@ static void handle_parity_checks5(struct r5conf *conf, struct stripe_head *sh,
 			break;
 		}
 		dev = &sh->dev[s->failed_num[0]];
-		/* fall through */
+		fallthrough;
 	case check_state_compute_result:
 		sh->check_state = check_state_idle;
 		if (!dev)
@@ -4207,7 +4214,7 @@ static void handle_parity_checks6(struct r5conf *conf, struct stripe_head *sh,
 
 		/* we have 2-disk failure */
 		BUG_ON(s->failed != 2);
-		/* fall through */
+		fallthrough;
 	case check_state_compute_result:
 		sh->check_state = check_state_idle;
 
@@ -4866,7 +4873,7 @@ static void handle_stripe(struct stripe_head *sh)
 	 * or to load a block that is being partially written.
 	 */
 	if (s.to_read || s.non_overwrite
-	    || (conf->level == 6 && s.to_write && s.failed)
+	    || (s.to_write && s.failed)
 	    || (s.syncing && (s.uptodate + s.compute < disks))
 	    || s.replacing
 	    || s.expanding)
@@ -4970,14 +4977,11 @@ static void handle_stripe(struct stripe_head *sh)
 				if (!test_bit(R5_ReWrite, &dev->flags)) {
 					set_bit(R5_Wantwrite, &dev->flags);
 					set_bit(R5_ReWrite, &dev->flags);
-					set_bit(R5_LOCKED, &dev->flags);
-					s.locked++;
-				} else {
+				} else
 					/* let's read it back */
 					set_bit(R5_Wantread, &dev->flags);
-					set_bit(R5_LOCKED, &dev->flags);
-					s.locked++;
-				}
+				set_bit(R5_LOCKED, &dev->flags);
+				s.locked++;
 			}
 		}
 
@@ -5121,28 +5125,6 @@ static void activate_bit_delay(struct r5conf *conf,
 		hash = sh->hash_lock_index;
 		__release_stripe(conf, sh, &temp_inactive_list[hash]);
 	}
-}
-
-static int raid5_congested(struct mddev *mddev, int bits)
-{
-	struct r5conf *conf = mddev->private;
-
-	/* No difference between reads and writes.  Just check
-	 * how busy the stripe_cache is
-	 */
-
-	if (test_bit(R5_INACTIVE_BLOCKED, &conf->cache_state))
-		return 1;
-
-	/* Also checks whether there is pressure on r5cache log space */
-	if (test_bit(R5C_LOG_TIGHT, &conf->cache_state))
-		return 1;
-	if (conf->quiesce)
-		return 1;
-	if (atomic_read(&conf->empty_inactive_list_nr))
-		return 1;
-
-	return 0;
 }
 
 static int in_chunk_boundary(struct mddev *mddev, struct bio *bio)
@@ -6532,9 +6514,12 @@ raid5_store_stripe_size(struct mddev  *mddev, const char *page, size_t len)
 
 	/*
 	 * The value should not be bigger than PAGE_SIZE. It requires to
-	 * be multiple of DEFAULT_STRIPE_SIZE.
+	 * be multiple of DEFAULT_STRIPE_SIZE and the value should be power
+	 * of two.
 	 */
-	if (new % DEFAULT_STRIPE_SIZE != 0 || new > PAGE_SIZE || new == 0)
+	if (new % DEFAULT_STRIPE_SIZE != 0 ||
+			new > PAGE_SIZE || new == 0 ||
+			new != roundup_pow_of_two(new))
 		return -EINVAL;
 
 	err = mddev_lock(mddev);
@@ -7037,7 +7022,7 @@ static struct r5conf *setup_conf(struct mddev *mddev)
 	} else
 		goto abort;
 	spin_lock_init(&conf->device_lock);
-	seqcount_init(&conf->gen_lock);
+	seqcount_spinlock_init(&conf->gen_lock, &conf->device_lock);
 	mutex_init(&conf->cache_size_mutex);
 	init_waitqueue_head(&conf->wait_for_quiescent);
 	init_waitqueue_head(&conf->wait_for_stripe);
@@ -8529,7 +8514,6 @@ static struct md_personality raid6_personality =
 	.finish_reshape = raid5_finish_reshape,
 	.quiesce	= raid5_quiesce,
 	.takeover	= raid6_takeover,
-	.congested	= raid5_congested,
 	.change_consistency_policy = raid5_change_consistency_policy,
 };
 static struct md_personality raid5_personality =
@@ -8554,7 +8538,6 @@ static struct md_personality raid5_personality =
 	.finish_reshape = raid5_finish_reshape,
 	.quiesce	= raid5_quiesce,
 	.takeover	= raid5_takeover,
-	.congested	= raid5_congested,
 	.change_consistency_policy = raid5_change_consistency_policy,
 };
 
@@ -8580,7 +8563,6 @@ static struct md_personality raid4_personality =
 	.finish_reshape = raid5_finish_reshape,
 	.quiesce	= raid5_quiesce,
 	.takeover	= raid4_takeover,
-	.congested	= raid5_congested,
 	.change_consistency_policy = raid5_change_consistency_policy,
 };
 

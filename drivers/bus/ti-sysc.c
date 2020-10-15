@@ -1395,6 +1395,10 @@ static const struct sysc_revision_quirk sysc_revision_quirks[] = {
 		   SYSC_QUIRK_SWSUP_SIDLE | SYSC_QUIRK_SWSUP_MSTANDBY),
 	SYSC_QUIRK("tptc", 0, 0, -ENODEV, -ENODEV, 0x40007c00, 0xffffffff,
 		   SYSC_QUIRK_SWSUP_SIDLE | SYSC_QUIRK_SWSUP_MSTANDBY),
+	SYSC_QUIRK("usb_host_hs", 0, 0, 0x10, 0x14, 0x50700100, 0xffffffff,
+		   SYSC_QUIRK_SWSUP_SIDLE | SYSC_QUIRK_SWSUP_MSTANDBY),
+	SYSC_QUIRK("usb_host_hs", 0, 0, 0x10, -ENODEV, 0x50700101, 0xffffffff,
+		   SYSC_QUIRK_SWSUP_SIDLE | SYSC_QUIRK_SWSUP_MSTANDBY),
 	SYSC_QUIRK("usb_otg_hs", 0, 0x400, 0x404, 0x408, 0x00000050,
 		   0xffffffff, SYSC_QUIRK_SWSUP_SIDLE | SYSC_QUIRK_SWSUP_MSTANDBY),
 	SYSC_QUIRK("usb_otg_hs", 0, 0, 0x10, -ENODEV, 0x4ea2080d, 0xffffffff,
@@ -1473,8 +1477,6 @@ static const struct sysc_revision_quirk sysc_revision_quirks[] = {
 	SYSC_QUIRK("tpcc", 0, 0, -ENODEV, -ENODEV, 0x40014c00, 0xffffffff, 0),
 	SYSC_QUIRK("usbhstll", 0, 0, 0x10, 0x14, 0x00000004, 0xffffffff, 0),
 	SYSC_QUIRK("usbhstll", 0, 0, 0x10, 0x14, 0x00000008, 0xffffffff, 0),
-	SYSC_QUIRK("usb_host_hs", 0, 0, 0x10, 0x14, 0x50700100, 0xffffffff, 0),
-	SYSC_QUIRK("usb_host_hs", 0, 0, 0x10, -ENODEV, 0x50700101, 0xffffffff, 0),
 	SYSC_QUIRK("venc", 0x58003000, 0, -ENODEV, -ENODEV, 0x00000002, 0xffffffff, 0),
 	SYSC_QUIRK("vfpe", 0, 0, 0x104, -ENODEV, 0x4d001200, 0xffffffff, 0),
 #endif
@@ -1847,7 +1849,7 @@ static int sysc_clockdomain_init(struct sysc *ddata)
 	switch (ddata->nr_clocks) {
 	case 2:
 		ick = ddata->clocks[SYSC_ICK];
-		/* fallthrough */
+		fallthrough;
 	case 1:
 		fck = ddata->clocks[SYSC_FCK];
 		break;
@@ -2865,6 +2867,24 @@ static int sysc_check_disabled_devices(struct sysc *ddata)
 	return error;
 }
 
+/*
+ * Ignore timers tagged with no-reset and no-idle. These are likely in use,
+ * for example by drivers/clocksource/timer-ti-dm-systimer.c. If more checks
+ * are needed, we could also look at the timer register configuration.
+ */
+static int sysc_check_active_timer(struct sysc *ddata)
+{
+	if (ddata->cap->type != TI_SYSC_OMAP2_TIMER &&
+	    ddata->cap->type != TI_SYSC_OMAP4_TIMER)
+		return 0;
+
+	if ((ddata->cfg.quirks & SYSC_QUIRK_NO_RESET_ON_INIT) &&
+	    (ddata->cfg.quirks & SYSC_QUIRK_NO_IDLE))
+		return -EBUSY;
+
+	return 0;
+}
+
 static const struct of_device_id sysc_match_table[] = {
 	{ .compatible = "simple-bus", },
 	{ /* sentinel */ },
@@ -2918,6 +2938,10 @@ static int sysc_probe(struct platform_device *pdev)
 	sysc_init_early_quirks(ddata);
 
 	error = sysc_check_disabled_devices(ddata);
+	if (error)
+		return error;
+
+	error = sysc_check_active_timer(ddata);
 	if (error)
 		return error;
 

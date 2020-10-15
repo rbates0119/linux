@@ -673,9 +673,10 @@ static int tcf_ct_ipv6_is_fragment(struct sk_buff *skb, bool *frag)
 }
 
 static int tcf_ct_handle_fragments(struct net *net, struct sk_buff *skb,
-				   u8 family, u16 zone)
+				   u8 family, u16 zone, bool *defrag)
 {
 	enum ip_conntrack_info ctinfo;
+	struct qdisc_skb_cb cb;
 	struct nf_conn *ct;
 	int err = 0;
 	bool frag;
@@ -693,6 +694,7 @@ static int tcf_ct_handle_fragments(struct net *net, struct sk_buff *skb,
 		return err;
 
 	skb_get(skb);
+	cb = *qdisc_skb_cb(skb);
 
 	if (family == NFPROTO_IPV4) {
 		enum ip_defrag_users user = IP_DEFRAG_CONNTRACK_IN + zone;
@@ -702,7 +704,12 @@ static int tcf_ct_handle_fragments(struct net *net, struct sk_buff *skb,
 		err = ip_defrag(net, skb, user);
 		local_bh_enable();
 		if (err && err != -EINPROGRESS)
-			goto out_free;
+			return err;
+
+		if (!err) {
+			*defrag = true;
+			cb.mru = IPCB(skb)->frag_max_size;
+		}
 	} else { /* NFPROTO_IPV6 */
 #if IS_ENABLED(CONFIG_NF_DEFRAG_IPV6)
 		enum ip6_defrag_users user = IP6_DEFRAG_CONNTRACK_IN + zone;
@@ -711,12 +718,18 @@ static int tcf_ct_handle_fragments(struct net *net, struct sk_buff *skb,
 		err = nf_ct_frag6_gather(net, skb, user);
 		if (err && err != -EINPROGRESS)
 			goto out_free;
+
+		if (!err) {
+			*defrag = true;
+			cb.mru = IP6CB(skb)->frag_max_size;
+		}
 #else
 		err = -EOPNOTSUPP;
 		goto out_free;
 #endif
 	}
 
+	*qdisc_skb_cb(skb) = cb;
 	skb_clear_hash(skb);
 	skb->ignore_df = 1;
 	return err;
@@ -783,7 +796,7 @@ static int ct_nat_execute(struct sk_buff *skb, struct nf_conn *ct,
 			}
 		}
 		/* Non-ICMP, fall thru to initialize if needed. */
-		/* fall through */
+		fallthrough;
 	case IP_CT_NEW:
 		/* Seen it before?  This can happen for loopback, retrans,
 		 * or local packets.
@@ -914,6 +927,7 @@ static int tcf_ct_act(struct sk_buff *skb, const struct tc_action *a,
 	int nh_ofs, err, retval;
 	struct tcf_ct_params *p;
 	bool skip_add = false;
+	bool defrag = false;
 	struct nf_conn *ct;
 	u8 family;
 
@@ -946,7 +960,7 @@ static int tcf_ct_act(struct sk_buff *skb, const struct tc_action *a,
 	 */
 	nh_ofs = skb_network_offset(skb);
 	skb_pull_rcsum(skb, nh_ofs);
-	err = tcf_ct_handle_fragments(net, skb, family, p->zone);
+	err = tcf_ct_handle_fragments(net, skb, family, p->zone, &defrag);
 	if (err == -EINPROGRESS) {
 		retval = TC_ACT_STOLEN;
 		goto out;
@@ -1014,6 +1028,8 @@ out_push:
 
 out:
 	tcf_action_update_bstats(&c->common, skb);
+	if (defrag)
+		qdisc_skb_cb(skb)->pkt_len = skb->len;
 	return retval;
 
 drop:
@@ -1281,8 +1297,6 @@ static int tcf_ct_init(struct net *net, struct nlattr *nla,
 		tcf_chain_put_by_act(goto_ch);
 	if (params)
 		call_rcu(&params->rcu, tcf_ct_params_free);
-	if (res == ACT_P_CREATED)
-		tcf_idr_insert(tn, *a);
 
 	return res;
 
@@ -1452,12 +1466,12 @@ static int tcf_ct_search(struct net *net, struct tc_action **a, u32 index)
 	return tcf_idr_search(tn, a, index);
 }
 
-static void tcf_stats_update(struct tc_action *a, u64 bytes, u32 packets,
-			     u64 lastuse, bool hw)
+static void tcf_stats_update(struct tc_action *a, u64 bytes, u64 packets,
+			     u64 drops, u64 lastuse, bool hw)
 {
 	struct tcf_ct *c = to_ct(a);
 
-	tcf_action_update_stats(a, bytes, packets, false, hw);
+	tcf_action_update_stats(a, bytes, packets, drops, hw);
 	c->tcf_tm.lastuse = max_t(u64, c->tcf_tm.lastuse, lastuse);
 }
 
@@ -1531,10 +1545,10 @@ static int __init ct_init_module(void)
 
 	return 0;
 
-err_tbl_init:
-	destroy_workqueue(act_ct_wq);
 err_register:
 	tcf_ct_flow_tables_uninit();
+err_tbl_init:
+	destroy_workqueue(act_ct_wq);
 	return err;
 }
 

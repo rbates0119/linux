@@ -742,8 +742,8 @@ static inline bool page_is_mergeable(const struct bio_vec *bv,
 		struct page *page, unsigned int len, unsigned int off,
 		bool *same_page)
 {
-	phys_addr_t vec_end_addr = page_to_phys(bv->bv_page) +
-		bv->bv_offset + bv->bv_len - 1;
+	size_t bv_end = bv->bv_offset + bv->bv_len;
+	phys_addr_t vec_end_addr = page_to_phys(bv->bv_page) + bv_end - 1;
 	phys_addr_t page_addr = page_to_phys(page);
 
 	if (vec_end_addr + 1 != page_addr + off)
@@ -752,9 +752,9 @@ static inline bool page_is_mergeable(const struct bio_vec *bv,
 		return false;
 
 	*same_page = ((vec_end_addr & PAGE_MASK) == page_addr);
-	if (!*same_page && pfn_to_page(PFN_DOWN(vec_end_addr)) + 1 != page)
-		return false;
-	return true;
+	if (*same_page)
+		return true;
+	return (bv->bv_page + bv_end / PAGE_SIZE) == (page + off / PAGE_SIZE);
 }
 
 /*
@@ -864,7 +864,7 @@ EXPORT_SYMBOL(bio_add_pc_page);
  * @same_page: return if the segment has been merged inside the same page
  *
  * Try to add the data at @page + @off to the last bvec of @bio.  This is a
- * a useful optimisation for file systems with a block size smaller than the
+ * useful optimisation for file systems with a block size smaller than the
  * page size.
  *
  * Warn if (@len, @off) crosses pages in case that @same_page is true.
@@ -881,8 +881,10 @@ bool __bio_try_merge_page(struct bio *bio, struct page *page,
 		struct bio_vec *bv = &bio->bi_io_vec[bio->bi_vcnt - 1];
 
 		if (page_is_mergeable(bv, page, len, off, same_page)) {
-			if (bio->bi_iter.bi_size > UINT_MAX - len)
+			if (bio->bi_iter.bi_size > UINT_MAX - len) {
+				*same_page = false;
 				return false;
+			}
 			bv->bv_len += len;
 			bio->bi_iter.bi_size += len;
 			return true;
@@ -990,7 +992,7 @@ static int __bio_iov_bvec_add_pages(struct bio *bio, struct iov_iter *iter)
  * Pins pages from *iter and appends them to @bio's bvec array. The
  * pages will have to be released using put_page() when done.
  * For multi-segment *iter, this function only adds pages from the
- * the next non-empty segment of the iov iterator.
+ * next non-empty segment of the iov iterator.
  */
 static int __bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter)
 {

@@ -143,6 +143,7 @@ EXPORT_SYMBOL_GPL(dm_bio_get_target_bio_nr);
 #define DMF_NOFLUSH_SUSPENDING 5
 #define DMF_DEFERRED_REMOVE 6
 #define DMF_SUSPENDED_INTERNALLY 7
+#define DMF_POST_SUSPENDING 8
 
 #define DM_NUMA_NODE NUMA_NO_NODE
 static int dm_numa_node = DM_NUMA_NODE;
@@ -503,7 +504,8 @@ static int dm_blk_report_zones(struct gendisk *disk, sector_t sector,
 		}
 
 		args.tgt = tgt;
-		ret = tgt->type->report_zones(tgt, &args, nr_zones);
+		ret = tgt->type->report_zones(tgt, &args,
+					      nr_zones - args.zone_idx);
 		if (ret < 0)
 			goto out;
 	} while (args.zone_idx < nr_zones &&
@@ -1019,7 +1021,7 @@ static void clone_endio(struct bio *bio)
 		switch (r) {
 		case DM_ENDIO_REQUEUE:
 			error = BLK_STS_DM_REQUEUE;
-			/*FALLTHRU*/
+			fallthrough;
 		case DM_ENDIO_DONE:
 			break;
 		case DM_ENDIO_INCOMPLETE:
@@ -1134,15 +1136,16 @@ static bool dm_dax_supported(struct dax_device *dax_dev, struct block_device *bd
 {
 	struct mapped_device *md = dax_get_private(dax_dev);
 	struct dm_table *map;
+	bool ret = false;
 	int srcu_idx;
-	bool ret;
 
 	map = dm_get_live_table(md, &srcu_idx);
 	if (!map)
-		return false;
+		goto out;
 
 	ret = dm_table_supports_dax(map, device_supports_dax, &blocksize);
 
+out:
 	dm_put_live_table(md, srcu_idx);
 
 	return ret;
@@ -1721,23 +1724,6 @@ out:
 	return ret;
 }
 
-static void dm_queue_split(struct mapped_device *md, struct dm_target *ti, struct bio **bio)
-{
-	unsigned len, sector_count;
-
-	sector_count = bio_sectors(*bio);
-	len = min_t(sector_t, max_io_len((*bio)->bi_iter.bi_sector, ti), sector_count);
-
-	if (sector_count > len) {
-		struct bio *split = bio_split(*bio, len, GFP_NOIO, &md->queue->bio_split);
-
-		bio_chain(split, *bio);
-		trace_block_split(md->queue, split, (*bio)->bi_iter.bi_sector);
-		submit_bio_noacct(*bio);
-		*bio = split;
-	}
-}
-
 static blk_qc_t dm_process_bio(struct mapped_device *md,
 			       struct dm_table *map, struct bio *bio)
 {
@@ -1758,21 +1744,21 @@ static blk_qc_t dm_process_bio(struct mapped_device *md,
 	}
 
 	/*
-	 * If in ->queue_bio we need to use blk_queue_split(), otherwise
+	 * If in ->submit_bio we need to use blk_queue_split(), otherwise
 	 * queue_limits for abnormal requests (e.g. discard, writesame, etc)
 	 * won't be imposed.
+	 * If called from dm_wq_work() for deferred bio processing, bio
+	 * was already handled by following code with previous ->submit_bio.
 	 */
 	if (current->bio_list) {
 		if (is_abnormal_io(bio))
 			blk_queue_split(&bio);
-		else
-			dm_queue_split(md, ti, &bio);
+		/* regular IO is split by __split_and_process_bio */
 	}
 
 	if (dm_get_md_type(md) == DM_TYPE_NVME_BIO_BASED)
 		return __process_bio(md, map, bio, ti);
-	else
-		return __split_and_process_bio(md, map, bio);
+	return __split_and_process_bio(md, map, bio);
 }
 
 static blk_qc_t dm_submit_bio(struct bio *bio)
@@ -1811,31 +1797,6 @@ static blk_qc_t dm_submit_bio(struct bio *bio)
 
 	dm_put_live_table(md, srcu_idx);
 	return ret;
-}
-
-static int dm_any_congested(void *congested_data, int bdi_bits)
-{
-	int r = bdi_bits;
-	struct mapped_device *md = congested_data;
-	struct dm_table *map;
-
-	if (!test_bit(DMF_BLOCK_IO_FOR_SUSPEND, &md->flags)) {
-		if (dm_request_based(md)) {
-			/*
-			 * With request-based DM we only need to check the
-			 * top-level queue for congestion.
-			 */
-			struct backing_dev_info *bdi = md->queue->backing_dev_info;
-			r = bdi->wb.congested->state & bdi_bits;
-		} else {
-			map = dm_get_live_table_fast(md);
-			if (map)
-				r = dm_table_any_congested(map, bdi_bits);
-			dm_put_live_table_fast(md);
-		}
-	}
-
-	return r;
 }
 
 /*-----------------------------------------------------------------
@@ -2276,12 +2237,6 @@ struct queue_limits *dm_get_queue_limits(struct mapped_device *md)
 }
 EXPORT_SYMBOL_GPL(dm_get_queue_limits);
 
-static void dm_init_congested_fn(struct mapped_device *md)
-{
-	md->queue->backing_dev_info->congested_data = md;
-	md->queue->backing_dev_info->congested_fn = dm_any_congested;
-}
-
 /*
  * Setup the DM device's queue based on md's type
  */
@@ -2298,12 +2253,10 @@ int dm_setup_md_queue(struct mapped_device *md, struct dm_table *t)
 			DMERR("Cannot initialize queue for request-based dm-mq mapped device");
 			return r;
 		}
-		dm_init_congested_fn(md);
 		break;
 	case DM_TYPE_BIO_BASED:
 	case DM_TYPE_DAX_BIO_BASED:
 	case DM_TYPE_NVME_BIO_BASED:
-		dm_init_congested_fn(md);
 		break;
 	case DM_TYPE_NONE:
 		WARN_ON_ONCE(true);
@@ -2403,6 +2356,7 @@ static void __dm_destroy(struct mapped_device *md, bool wait)
 	if (!dm_suspended_md(md)) {
 		dm_table_presuspend_targets(map);
 		set_bit(DMF_SUSPENDED, &md->flags);
+		set_bit(DMF_POST_SUSPENDING, &md->flags);
 		dm_table_postsuspend_targets(map);
 	}
 	/* dm_put_live_table must be before msleep, otherwise deadlock is possible */
@@ -2761,7 +2715,9 @@ retry:
 	if (r)
 		goto out_unlock;
 
+	set_bit(DMF_POST_SUSPENDING, &md->flags);
 	dm_table_postsuspend_targets(map);
+	clear_bit(DMF_POST_SUSPENDING, &md->flags);
 
 out_unlock:
 	mutex_unlock(&md->suspend_lock);
@@ -2858,7 +2814,9 @@ static void __dm_internal_suspend(struct mapped_device *md, unsigned suspend_fla
 	(void) __dm_suspend(md, map, suspend_flags, TASK_UNINTERRUPTIBLE,
 			    DMF_SUSPENDED_INTERNALLY);
 
+	set_bit(DMF_POST_SUSPENDING, &md->flags);
 	dm_table_postsuspend_targets(map);
+	clear_bit(DMF_POST_SUSPENDING, &md->flags);
 }
 
 static void __dm_internal_resume(struct mapped_device *md)
@@ -3019,6 +2977,11 @@ int dm_suspended_md(struct mapped_device *md)
 	return test_bit(DMF_SUSPENDED, &md->flags);
 }
 
+static int dm_post_suspending_md(struct mapped_device *md)
+{
+	return test_bit(DMF_POST_SUSPENDING, &md->flags);
+}
+
 int dm_suspended_internally_md(struct mapped_device *md)
 {
 	return test_bit(DMF_SUSPENDED_INTERNALLY, &md->flags);
@@ -3034,6 +2997,12 @@ int dm_suspended(struct dm_target *ti)
 	return dm_suspended_md(dm_table_get_md(ti->table));
 }
 EXPORT_SYMBOL_GPL(dm_suspended);
+
+int dm_post_suspending(struct dm_target *ti)
+{
+	return dm_post_suspending_md(dm_table_get_md(ti->table));
+}
+EXPORT_SYMBOL_GPL(dm_post_suspending);
 
 int dm_noflush_suspending(struct dm_target *ti)
 {
