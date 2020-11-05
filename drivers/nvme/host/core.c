@@ -630,7 +630,7 @@ static void nvme_assign_write_stream(struct nvme_ctrl *ctrl,
 	}
 	if (streamid > 0)
 	{
-		printk(KERN_DEBUG "\n nvme_assign_write_stream: stream_id = %lld, hint = %d\n", streamid, hint);
+		printk(KERN_WARNING "\n nvme_assign_write_stream: stream_id = %lld, hint = %d\n", streamid, hint);
 		*control |= NVME_RW_DTYPE_STREAMS;
 		*dsmgmt |= streamid << 16;
 		req->write_stream_id = 0;
